@@ -31,137 +31,35 @@ def calc_rating(likelihood, impact):
 scan = load_scan()
 env = scan["environment"]
 results = scan["results"]
+standing_risks_from_scan = scan.get("standing_risks", [])
 timestamp = datetime.now(timezone.utc).isoformat()
 
 risks = []
 
 # --- Generate risks from scan failures and warnings ---
+# Now reads board_impact, risk_likelihood, risk_impact from scan results (sourced from framework YAML)
 fail_warn = [r for r in results if r["status"] in ("FAIL", "WARN")]
 
-# Map each finding to a proper risk entry
-risk_templates = {
-    "ASI01-01": {
-        "title": "Prompt Injection Attack",
-        "description": "Agent has no prompt injection detection capability. Malicious content in messages, web pages, or documents could hijack agent behaviour, exfiltrate data, or trigger unintended actions.",
-        "category": "Agent Goal Hijack",
-        "likelihood": 4, "impact": 5,
-        "controls_present": "DM allowlist limits who can message agent directly",
-        "controls_missing": "No runtime prompt injection scanning",
-    },
-    "ASI01-02": {
-        "title": "Goal Hijack via Group Messages",
-        "description": "Agent processes all messages in group chat without requiring @mention. Any group member could inject malicious instructions or manipulate agent behaviour through crafted messages.",
-        "category": "Agent Goal Hijack",
-        "likelihood": 3, "impact": 4,
-        "controls_present": "Group limited to known members",
-        "controls_missing": "requireMention not enforced",
-    },
-    "ASI02-01": {
-        "title": "Unrestricted Shell Execution",
-        "description": "Agent can execute arbitrary shell commands without sandboxing. A compromised prompt or malicious skill could run destructive commands, install malware, or exfiltrate credentials.",
-        "category": "Tool Misuse",
-        "likelihood": 2, "impact": 5,
-        "controls_present": "Running in dedicated VM (isolation at hypervisor level)",
-        "controls_missing": "No shell-level sandboxing or command allowlist",
-    },
-    "ASI04-01": {
-        "title": "Unvetted Skill Supply Chain",
-        "description": f"{env['bundled_skills']} bundled and {env['workspace_skills']} custom skills installed without formal security review or risk assessment. Malicious skills could steal credentials, modify memory, or establish persistence.",
-        "category": "Supply Chain",
-        "likelihood": 3, "impact": 4,
-        "controls_present": "Skills from official ClawHub registry",
-        "controls_missing": "No skills inventory, no per-skill risk assessment, no version pinning",
-    },
-    "ASI04-02": {
-        "title": "Custom Skills Not Audited",
-        "description": f"Custom workspace skills ({', '.join(env['workspace_skill_names'])}) have not been formally reviewed for security vulnerabilities or malicious patterns.",
-        "category": "Supply Chain",
-        "likelihood": 2, "impact": 4,
-        "controls_present": "Skills authored by operator",
-        "controls_missing": "No formal review or audit process",
-    },
-    "ASI05-02": {
-        "title": "Unbounded Cron Execution",
-        "description": "One or more cron jobs lack timeout configuration, allowing potentially infinite execution consuming resources and API credits.",
-        "category": "Code Execution",
-        "likelihood": 3, "impact": 3,
-        "controls_present": "Cron watchdog monitors for failures",
-        "controls_missing": "Missing timeoutSeconds on some jobs",
-    },
-}
-
-# Additional standing risks (always present for any OpenClaw deployment)
-standing_risks = [
-    {
-        "title": "Credential Exposure via Memory Files",
-        "description": f"Agent maintains {env['memory_files']} persistent memory files that may accumulate sensitive information (API keys, personal data, credentials) over time. Memory files are accessible to the agent and backed up to git/cloud.",
-        "category": "Data Protection",
-        "likelihood": 3, "impact": 4,
-        "controls_present": "Git-tracked for integrity, automated backups",
-        "controls_missing": "No automated PII/credential scanning of memory files",
-        "asi_ref": "ASI06",
-    },
-    {
-        "title": "Browser Session Hijack",
-        "description": "Agent maintains active browser sessions with authenticated access to services (LinkedIn, Gmail, etc). Compromised agent could access all authenticated sessions.",
-        "category": "Identity & Access",
-        "likelihood": 2, "impact": 5,
-        "controls_present": "Isolated browser profile, VM separation",
-        "controls_missing": "No session rotation policy, no access logging per browser action",
-        "asi_ref": "ASI03",
-    },
-    {
-        "title": "Autonomous External Actions",
-        "description": f"Agent has {env['cron_jobs']} cron jobs running autonomously, including jobs that post to LinkedIn and send messages. Drift in prompt interpretation or model behaviour could result in unintended public communications.",
-        "category": "Human Oversight",
-        "likelihood": 2, "impact": 4,
-        "controls_present": "LinkedIn crons use approval gates, drafts sent for review",
-        "controls_missing": "No automated content policy checks before posting",
-        "asi_ref": "ASI09",
-    },
-    {
-        "title": "Model Provider Dependency",
-        "description": f"Primary model: {env['model_primary']}. Agent operations depend on external API availability. Provider outage, policy change, or account suspension would halt all agent functions.",
-        "category": "Operational Resilience",
-        "likelihood": 3, "impact": 3,
-        "controls_present": f"Fallback models configured: {', '.join(env['model_fallbacks'])}",
-        "controls_missing": "No local model fallback, no SLA monitoring",
-        "asi_ref": "ASI08",
-    },
-    {
-        "title": "Shadow AI Governance Gap",
-        "description": "OpenClaw deployment operates outside traditional IT governance. No formal change management, no approval process for new skills or cron jobs, no periodic governance review scheduled.",
-        "category": "Governance",
-        "likelihood": 4, "impact": 3,
-        "controls_present": "Git-tracked workspace, command logging enabled",
-        "controls_missing": "No change approval workflow, no governance review schedule, no formal owner assignment",
-        "asi_ref": "ASI10",
-    },
-]
-
-# Build risk register entries from scan findings
 seq = 1
 for r in fail_warn:
-    tmpl = risk_templates.get(r["check_id"])
-    if not tmpl:
-        continue
-    
-    inherent = calc_rating(tmpl["likelihood"], tmpl["impact"])
-    # Residual = reduced by existing controls (rough: -1 likelihood if controls present)
-    residual_l = max(1, tmpl["likelihood"] - 1) if tmpl["controls_present"] else tmpl["likelihood"]
-    residual = calc_rating(residual_l, tmpl["impact"])
+    likelihood = r.get("risk_likelihood", 2)
+    impact = r.get("risk_impact", 3)
+    inherent = calc_rating(likelihood, impact)
+    residual_l = max(1, likelihood - 1)
+    residual = calc_rating(residual_l, impact)
     
     risks.append({
         "risk_id": risk_id(r["asi_category"], seq),
-        "title": tmpl["title"],
-        "description": tmpl["description"],
-        "category": tmpl["category"],
+        "title": r["check_name"],
+        "description": r.get("board_impact", r["detail"]),
+        "category": r["asi_category_name"],
         "asi_reference": r["asi_category"],
         "source_check": r["check_id"],
-        "inherent_risk": {"likelihood": tmpl["likelihood"], "impact": tmpl["impact"], "rating": inherent[0], "indicator": inherent[1], "score": inherent[2]},
-        "controls_present": tmpl["controls_present"],
-        "controls_missing": tmpl["controls_missing"],
-        "residual_risk": {"likelihood": residual_l, "impact": tmpl["impact"], "rating": residual[0], "indicator": residual[1], "score": residual[2]},
+        "inherent_risk": {"likelihood": likelihood, "impact": impact, "rating": inherent[0], "indicator": inherent[1], "score": inherent[2]},
+        "controls_present": r["detail"] if r["status"] == "WARN" else "",
+        "controls_missing": r.get("remediation", ""),
+        "residual_risk": {"likelihood": residual_l, "impact": impact, "rating": residual[0], "indicator": residual[1], "score": residual[2]},
+        "board_impact": r.get("board_impact", ""),
         "owner": "Agent Operator",
         "review_date": "",
         "remediation": r.get("remediation", ""),
@@ -169,23 +67,26 @@ for r in fail_warn:
     })
     seq += 1
 
-# Add standing risks
-for sr in standing_risks:
-    inherent = calc_rating(sr["likelihood"], sr["impact"])
-    residual_l = max(1, sr["likelihood"] - 1) if sr["controls_present"] else sr["likelihood"]
-    residual = calc_rating(residual_l, sr["impact"])
+# Add standing risks (from framework YAML via scan output)
+for sr in standing_risks_from_scan:
+    likelihood = sr.get("risk_likelihood", 2)
+    impact = sr.get("risk_impact", 3)
+    inherent = calc_rating(likelihood, impact)
+    residual_l = max(1, likelihood - 1) if sr.get("controls_present") else likelihood
+    residual = calc_rating(residual_l, impact)
     
     risks.append({
-        "risk_id": risk_id(sr["asi_ref"], seq),
+        "risk_id": risk_id(sr.get("asi_ref", "GEN"), seq),
         "title": sr["title"],
-        "description": sr["description"],
-        "category": sr["category"],
-        "asi_reference": sr["asi_ref"],
+        "description": sr.get("board_impact", ""),
+        "category": sr.get("category", "General"),
+        "asi_reference": sr.get("asi_ref", ""),
         "source_check": "standing",
-        "inherent_risk": {"likelihood": sr["likelihood"], "impact": sr["impact"], "rating": inherent[0], "indicator": inherent[1], "score": inherent[2]},
-        "controls_present": sr["controls_present"],
-        "controls_missing": sr["controls_missing"],
-        "residual_risk": {"likelihood": residual_l, "impact": sr["impact"], "rating": residual[0], "indicator": residual[1], "score": residual[2]},
+        "inherent_risk": {"likelihood": likelihood, "impact": impact, "rating": inherent[0], "indicator": inherent[1], "score": inherent[2]},
+        "controls_present": sr.get("controls_present", ""),
+        "controls_missing": sr.get("controls_missing", ""),
+        "residual_risk": {"likelihood": residual_l, "impact": impact, "rating": residual[0], "indicator": residual[1], "score": residual[2]},
+        "board_impact": sr.get("board_impact", ""),
         "owner": "Agent Operator",
         "review_date": "",
         "remediation": "",

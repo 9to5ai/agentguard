@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """AgentGuard Scanner — OWASP ASI Top 10 Assessment for OpenClaw"""
 
-import json, os, subprocess, sys, glob
+import json, os, subprocess, sys, glob, yaml
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,6 +10,26 @@ SKILL_DIR = SCRIPT_DIR.parent
 REPORT_DIR = SKILL_DIR / "reports"
 WORKSPACE = Path.home() / ".openclaw" / "workspace"
 CONFIG_FILE = Path("/tmp/agentguard-config.json")
+
+# Load framework YAML for board-impact metadata
+FRAMEWORK_FILE = SKILL_DIR / "frameworks" / "owasp-asi-2026.yaml"
+FRAMEWORK_META = {}  # check_id -> {board_impact, business_risk, analogy, risk_likelihood, risk_impact}
+STANDING_RISKS = []
+try:
+    with open(FRAMEWORK_FILE) as f:
+        fw = yaml.safe_load(f)
+    for control in fw.get("controls", []):
+        for chk in control.get("checks", []):
+            FRAMEWORK_META[chk["id"]] = {
+                "board_impact": chk.get("board_impact", ""),
+                "business_risk": chk.get("business_risk", ""),
+                "analogy": chk.get("analogy", ""),
+                "risk_likelihood": chk.get("risk_likelihood", 2),
+                "risk_impact": chk.get("risk_impact", 3),
+            }
+    STANDING_RISKS = fw.get("standing_risks", [])
+except Exception as e:
+    print(f"Warning: Could not load framework YAML: {e}", file=sys.stderr)
 
 def load_config():
     with open(CONFIG_FILE) as f:
@@ -70,6 +90,7 @@ print("🔎 Running 27 checks across OWASP ASI Top 10...", file=sys.stderr)
 results = []
 
 def check(check_id, name, asi_id, asi_name, status, detail, remediation=""):
+    meta = FRAMEWORK_META.get(check_id, {})
     results.append({
         "check_id": check_id,
         "check_name": name,
@@ -78,6 +99,11 @@ def check(check_id, name, asi_id, asi_name, status, detail, remediation=""):
         "status": status,  # PASS, FAIL, WARN
         "detail": detail,
         "remediation": remediation,
+        "board_impact": meta.get("board_impact", ""),
+        "business_risk": meta.get("business_risk", ""),
+        "analogy": meta.get("analogy", ""),
+        "risk_likelihood": meta.get("risk_likelihood", 2),
+        "risk_impact": meta.get("risk_impact", 3),
     })
 
 # ===== ASI01: Agent Goal Hijack =====
@@ -351,6 +377,7 @@ report = {
     },
     "categories": {cat_id: {"name": cat["name"], "status": cat["worst"]} for cat_id, cat in categories.items()},
     "results": results,
+    "standing_risks": STANDING_RISKS,
 }
 
 # Save

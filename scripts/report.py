@@ -41,53 +41,8 @@ def rag_label(status):
 overall = scan["summary"]["overall_rating"]
 score = scan["summary"]["score_pct"]
 
-# Board-friendly impact translations
-BOARD_IMPACT = {
-    "ASI01-01": {
-        "so_what": "The AI agent cannot detect when someone is trying to manipulate it. An attacker could embed hidden instructions in a document, email, or web page that cause the agent to leak confidential data, send unauthorised messages, or take actions on behalf of the organisation without anyone realising.",
-        "business_risk": "Data breach, reputational damage, regulatory sanction",
-        "analogy": "Like having an employee who follows any instruction from anyone, including strangers, without questioning it.",
-    },
-    "ASI01-02": {
-        "so_what": "The agent reads and responds to every message in the group chat, not just ones directed at it. Any member of the group — or anyone who gains access to it — could give the agent instructions, potentially triggering actions like accessing files, browsing websites, or sending messages on behalf of the organisation.",
-        "business_risk": "Unauthorised access, social engineering vector, loss of control",
-        "analogy": "Like giving every person in an open-plan office the authority to instruct your PA, not just you.",
-    },
-    "ASI02-01": {
-        "so_what": "The agent can run any system command on the machine it's hosted on — install software, read files, make network connections. While it runs in a virtual machine (limiting blast radius), there are no restrictions on what commands it can execute within that environment.",
-        "business_risk": "System compromise, credential theft, lateral movement if VM is breached",
-        "analogy": "Like giving an employee admin access to a company laptop with no usage monitoring or restricted applications.",
-    },
-    "ASI04-01": {
-        "so_what": "The agent has 56 software extensions ('skills') installed, but there is no formal register of what each one does, who built it, or what access it has. Any one of these could contain vulnerabilities or malicious code that the agent would execute with full privileges.",
-        "business_risk": "Supply chain compromise, shadow functionality, unvetted third-party code running with full access",
-        "analogy": "Like installing 56 browser extensions on a corporate machine without IT approval or review.",
-    },
-    "ASI04-02": {
-        "so_what": "Four custom-built extensions are running that have not been through a formal security review. While they were created by the operator, there is no documented audit trail confirming they are free from vulnerabilities or unintended behaviours.",
-        "business_risk": "Unaudited code with full agent privileges",
-        "analogy": "Like running homemade scripts on production systems without peer review.",
-    },
-    "ASI05-02": {
-        "so_what": "At least one scheduled task has no time limit. If it malfunctions, it could run indefinitely — consuming API credits, generating unintended outputs, or holding system resources hostage. There is no automatic kill switch.",
-        "business_risk": "Runaway costs, resource exhaustion, uncontrolled autonomous behaviour",
-        "analogy": "Like approving a standing order with no expiry date and no spending cap.",
-    },
-}
-
-RISK_BOARD_IMPACT = {
-    "Prompt Injection Attack": "An attacker could take control of the agent's behaviour by hiding instructions in everyday content the agent processes — emails, documents, web pages. The agent would follow these instructions believing them to be legitimate, potentially leaking confidential information or taking unauthorised actions.",
-    "Goal Hijack via Group Messages": "Anyone in the group chat can give the agent instructions. This means the agent's behaviour is only as trustworthy as the least trustworthy person in the group.",
-    "Unrestricted Shell Execution": "The agent can run any command on its host machine. While VM isolation limits the damage, a sophisticated attack could use this to access credentials, install persistent backdoors, or pivot to other systems.",
-    "Unvetted Skill Supply Chain": "The agent relies on 56 third-party extensions with no formal vetting process. This is the AI equivalent of a supply chain attack — one compromised extension gives an attacker full access.",
-    "Custom Skills Not Audited": "Internally-built extensions have no audit trail. If something goes wrong, there is no documented review to fall back on for accountability.",
-    "Unbounded Cron Execution": "A scheduled task without a timeout is a financial and operational risk. It could silently consume resources or generate unintended outputs for hours before anyone notices.",
-    "Credential Exposure via Memory Files": "The agent accumulates information over time in persistent files. These files may contain sensitive data — API keys, personal information, business intelligence — that could be exposed if the agent is compromised.",
-    "Browser Session Hijack": "The agent maintains logged-in sessions to services like LinkedIn and email. If the agent is compromised, the attacker inherits all of those active sessions — no passwords needed.",
-    "Autonomous External Actions": "The agent publishes content to LinkedIn and sends messages on scheduled timers. A subtle drift in behaviour could result in inappropriate or damaging communications going out under the organisation's name.",
-    "Model Provider Dependency": "All agent operations depend on a single external AI provider. If that provider has an outage, changes its policies, or suspends the account, every automated function stops immediately.",
-    "Shadow AI Governance Gap": "This AI agent operates outside the organisation's normal IT governance. There is no change management process, no approval workflow for new capabilities, and no scheduled governance review. It is, in effect, shadow AI with significant access.",
-}
+# Board impact now comes from scan results (sourced from framework YAML)
+# No hardcoded impact text — everything flows from frameworks/owasp-asi-2026.yaml
 
 # --- Build HTML ---
 html = f"""<!DOCTYPE html>
@@ -194,10 +149,9 @@ html += "</table>\n"
 
 # Detailed findings
 def render_finding(r, color, bg_color, accent):
-    impact = BOARD_IMPACT.get(r["check_id"], {})
-    so_what = impact.get("so_what", "")
-    biz_risk = impact.get("business_risk", "")
-    analogy = impact.get("analogy", "")
+    so_what = r.get("board_impact", "")
+    biz_risk = r.get("business_risk", "")
+    analogy = r.get("analogy", "")
     icon = "🔴" if color == "fail" else "🟡"
     accent_hex = "#ef4444" if color == "fail" else "#f59e0b"
     block = '<div class="finding finding-{color}">'.format(color=color)
@@ -234,7 +188,7 @@ if risks:
         ir = r["inherent_risk"]
         rr = r["residual_risk"]
         tag_class = f"tag-{rr['rating'].lower()}"
-        board_impact = RISK_BOARD_IMPACT.get(r["title"], r["controls_missing"])
+        board_impact = r.get("board_impact", r.get("description", r["controls_missing"]))
         # Truncate for table, show first sentence
         short_impact = board_impact.split(". ")[0] + "." if ". " in board_impact else board_impact
         html += f'<tr><td>{r["risk_id"]}</td><td><strong>{r["title"]}</strong></td>'
