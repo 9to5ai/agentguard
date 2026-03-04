@@ -1,0 +1,273 @@
+# OWASP Agentic Security Initiative (ASI) Top 10 — 2026
+# Framework definition for AgentGuard scanner
+# Reference: https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+
+framework:
+  id: owasp-asi-2026
+  name: "OWASP Top 10 for Agentic Applications 2026"
+  version: "1.0"
+  url: "https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/"
+
+controls:
+
+  - id: ASI01
+    name: "Agent Goal Hijack"
+    description: "Protections against attackers altering agent objectives through malicious content"
+    severity: critical
+    checks:
+      - id: ASI01-01
+        name: "Prompt injection defence installed"
+        description: "A prompt injection detection skill (e.g. prompt-guard) is installed"
+        check_type: skill_installed
+        check_value: ["prompt-guard", "secureclaw"]
+        remediation: "Install a prompt injection detection skill: clawhub install prompt-guard"
+
+      - id: ASI01-02
+        name: "Group chat mention policy"
+        description: "Agent requires mention in group chats to avoid processing arbitrary messages"
+        check_type: config_path
+        check_path: "channels.telegram.groups.*.requireMention"
+        expected: true
+        remediation: "Set requireMention: true for group chats to prevent goal hijack via group messages"
+
+      - id: ASI01-03
+        name: "DM allowlist configured"
+        description: "Only authorised users can send direct messages to the agent"
+        check_type: config_path
+        check_path: "channels.telegram.dmPolicy"
+        expected: "allowlist"
+        remediation: "Set dmPolicy to allowlist and configure allowFrom with authorised user IDs"
+
+  - id: ASI02
+    name: "Tool Misuse and Exploitation"
+    description: "Controls against agents using legitimate tools in unsafe ways"
+    severity: high
+    checks:
+      - id: ASI02-01
+        name: "Shell execution sandboxed"
+        description: "Shell/exec tool is sandboxed or restricted"
+        check_type: tool_policy
+        check_value: "shell_sandboxed"
+        remediation: "Configure tool_policy to sandbox shell execution or restrict to specific commands"
+
+      - id: ASI02-02
+        name: "Browser automation controlled"
+        description: "Browser tool has appropriate restrictions"
+        check_type: browser_profile
+        check_value: "isolated_profile"
+        remediation: "Use an isolated browser profile rather than the user's primary browser"
+
+      - id: ASI02-03
+        name: "Dangerous node commands denied"
+        description: "High-risk node commands (camera, screen recording) are restricted"
+        check_type: config_path
+        check_path: "gateway.nodes.denyCommands"
+        expected: "non_empty_array"
+        remediation: "Configure gateway.nodes.denyCommands to block camera.snap, screen.record, etc."
+
+  - id: ASI03
+    name: "Identity and Privilege Abuse"
+    description: "Controls for agent identity scope and least-privilege access"
+    severity: critical
+    checks:
+      - id: ASI03-01
+        name: "Gateway authentication enabled"
+        description: "Gateway requires token authentication"
+        check_type: config_path
+        check_path: "gateway.auth.mode"
+        expected: "token"
+        remediation: "Set gateway.auth.mode to 'token' with a strong auth token"
+
+      - id: ASI03-02
+        name: "Gateway bound to loopback"
+        description: "Gateway only listens on localhost, not exposed to network"
+        check_type: config_path
+        check_path: "gateway.bind"
+        expected: "loopback"
+        remediation: "Set gateway.bind to 'loopback' to prevent network exposure"
+
+      - id: ASI03-03
+        name: "Telegram sender allowlist"
+        description: "Only specific user IDs can interact with the agent"
+        check_type: config_path
+        check_path: "channels.telegram.allowFrom"
+        expected: "non_empty_array"
+        remediation: "Configure allowFrom with authorised Telegram user IDs"
+
+      - id: ASI03-04
+        name: "Max concurrent sessions limited"
+        description: "Concurrent agent and subagent sessions are bounded"
+        check_type: config_path
+        check_path: "agents.defaults.maxConcurrent"
+        expected: "lte_10"
+        remediation: "Set maxConcurrent to a reasonable limit (e.g. 4-8)"
+
+  - id: ASI04
+    name: "Agentic Supply Chain Vulnerabilities"
+    description: "Controls for vetting and monitoring installed skills and plugins"
+    severity: high
+    checks:
+      - id: ASI04-01
+        name: "Skills inventory documented"
+        description: "Installed skills are tracked and their purposes documented"
+        check_type: skill_count
+        check_value: "documented"
+        remediation: "Maintain a skills inventory with purpose and risk assessment for each installed skill"
+
+      - id: ASI04-02
+        name: "Workspace skills reviewed"
+        description: "Custom workspace skills have been reviewed for security"
+        check_type: workspace_skills
+        check_value: "present"
+        remediation: "Review all custom skills in workspace/skills/ for malicious patterns"
+
+      - id: ASI04-03
+        name: "Security scanning skill installed"
+        description: "A security scanning skill (e.g. secureclaw) is installed to audit other skills"
+        check_type: skill_installed
+        check_value: ["secureclaw", "healthcheck"]
+        remediation: "Install secureclaw for automated security auditing: clawhub install secureclaw"
+
+  - id: ASI05
+    name: "Unexpected Code Execution"
+    description: "Controls against unsafe code generation and execution"
+    severity: critical
+    checks:
+      - id: ASI05-01
+        name: "Subagent execution bounded"
+        description: "Subagent concurrent execution has limits"
+        check_type: config_path
+        check_path: "agents.defaults.subagents.maxConcurrent"
+        expected: "lte_10"
+        remediation: "Set subagents.maxConcurrent to prevent runaway agent spawning"
+
+      - id: ASI05-02
+        name: "Cron job timeouts configured"
+        description: "All cron jobs have timeout limits to prevent infinite execution"
+        check_type: cron_timeouts
+        check_value: "all_have_timeout"
+        remediation: "Set timeoutSeconds on all cron job payloads"
+
+  - id: ASI06
+    name: "Memory and Context Poisoning"
+    description: "Protections for persistent memory and context integrity"
+    severity: high
+    checks:
+      - id: ASI06-01
+        name: "Memory files backed up"
+        description: "Memory files are version controlled or backed up"
+        check_type: git_tracked
+        check_path: "memory/"
+        remediation: "Ensure memory/ directory is tracked in git for integrity and rollback"
+
+      - id: ASI06-02
+        name: "Memory file count reasonable"
+        description: "Number of memory files is manageable (not excessive accumulation)"
+        check_type: file_count
+        check_path: "memory/"
+        expected: "lte_50"
+        remediation: "Review and consolidate old memory files to prevent context pollution"
+
+      - id: ASI06-03
+        name: "Workspace git-tracked"
+        description: "Workspace directory is under version control"
+        check_type: git_repo
+        check_path: "workspace"
+        remediation: "Initialise git in the workspace to track all changes"
+
+  - id: ASI07
+    name: "Insecure Inter-Agent Communication"
+    description: "Security of communication between agents and subagents"
+    severity: medium
+    checks:
+      - id: ASI07-01
+        name: "Subagent limits configured"
+        description: "Maximum concurrent subagents is bounded"
+        check_type: config_path
+        check_path: "agents.defaults.subagents.maxConcurrent"
+        expected: "lte_10"
+        remediation: "Limit subagent concurrency to prevent cascade effects"
+
+      - id: ASI07-02
+        name: "Tailscale/network sharing off"
+        description: "Agent is not exposed via Tailscale or network sharing"
+        check_type: config_path
+        check_path: "gateway.tailscale.mode"
+        expected: "off"
+        remediation: "Keep tailscale.mode as 'off' unless explicitly needed"
+
+  - id: ASI08
+    name: "Cascading Failures"
+    description: "Resilience against single faults propagating across agent systems"
+    severity: medium
+    checks:
+      - id: ASI08-01
+        name: "Model fallbacks configured"
+        description: "Fallback models are configured for resilience"
+        check_type: config_path
+        check_path: "agents.defaults.model.fallbacks"
+        expected: "non_empty_array"
+        remediation: "Configure model fallbacks (e.g. claude-sonnet as fallback for claude-opus)"
+
+      - id: ASI08-02
+        name: "Cron watchdog active"
+        description: "An automated watchdog monitors and retries failed cron jobs"
+        check_type: cron_exists
+        check_value: "watchdog"
+        remediation: "Create a cron watchdog job to monitor and auto-retry failed jobs"
+
+      - id: ASI08-03
+        name: "Compaction safeguards enabled"
+        description: "Session compaction has safeguards to prevent context loss"
+        check_type: config_path
+        check_path: "agents.defaults.compaction.mode"
+        expected: "safeguard"
+        remediation: "Set compaction.mode to 'safeguard' to protect context"
+
+  - id: ASI09
+    name: "Human-Agent Trust Exploitation"
+    description: "Controls ensuring appropriate human oversight of agent actions"
+    severity: high
+    checks:
+      - id: ASI09-01
+        name: "Cron jobs use approval gates"
+        description: "Autonomous cron jobs that take external actions require human approval"
+        check_type: cron_approval
+        check_value: "external_actions_gated"
+        remediation: "Cron jobs that post to social media, send emails, or take external actions should require human approval before execution"
+
+      - id: ASI09-02
+        name: "Command logging enabled"
+        description: "Agent commands and actions are logged for review"
+        check_type: config_path
+        check_path: "hooks.internal.entries.command-logger.enabled"
+        expected: true
+        remediation: "Enable the command-logger hook for audit trail"
+
+  - id: ASI10
+    name: "Rogue Agents"
+    description: "Controls against behavioral drift, scope creep, and unintended agent autonomy"
+    severity: high
+    checks:
+      - id: ASI10-01
+        name: "Cron job inventory manageable"
+        description: "Number of autonomous cron jobs is reasonable and reviewed"
+        check_type: cron_count
+        expected: "lte_15"
+        remediation: "Review all cron jobs periodically. Remove unused jobs. Document purpose of each."
+
+      - id: ASI10-02
+        name: "Session scope configured"
+        description: "DM sessions are scoped per channel peer"
+        check_type: config_path
+        check_path: "session.dmScope"
+        expected: "per-channel-peer"
+        remediation: "Set session.dmScope to 'per-channel-peer' for isolation"
+
+      - id: ASI10-03
+        name: "Restart controls enabled"
+        description: "Agent restart is available for recovery"
+        check_type: config_path
+        check_path: "commands.restart"
+        expected: true
+        remediation: "Enable commands.restart for emergency agent shutdown/restart"
